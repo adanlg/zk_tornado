@@ -2,9 +2,11 @@ import { useState } from "react";
 import $u from '../utils/$u.js';
 import { ethers } from "ethers";
 
+
 const wc = require("../circuit/witness_calculator.js");
 
-const tornadoAddress = "0x06DB9c2856Eab779B2794E98c769a2e6aDA4D4b6";
+// const tornadoAddress = "0x06DB9c2856Eab779B2794E98c769a2e6aDA4D4b6";
+const tornadoAddress = "0x43ca3D2C94be00692D207C6A1e60D8B325c6f12f"
 
 const tornadoJSON = require("../json/Tornado.json");
 const tornadoABI = tornadoJSON.abi;
@@ -38,7 +40,7 @@ const Interface = () => {
             var accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
             var chainId = window.ethereum.networkVersion;
 
-            if(chainId != "5"){
+            if(chainId != "31337"){
                 alert("Please switch to Goerli Testnet");
                 throw "wrong-chain";
             }
@@ -64,20 +66,28 @@ const Interface = () => {
 
         const secret = ethers.BigNumber.from(ethers.utils.randomBytes(32)).toString();
         const nullifier = ethers.BigNumber.from(ethers.utils.randomBytes(32)).toString();
+        console.log("Secret generated:", secret);
+        console.log("Nullifier generated:", nullifier);
 
         const input = {
             secret: $u.BN256ToBin(secret).split(""),
             nullifier: $u.BN256ToBin(nullifier).split("")
         };
+        console.log("Input prepared:", input);
 
         var res = await fetch("/deposit.wasm");
         var buffer = await res.arrayBuffer();
         var depositWC = await wc(buffer);
 
         const r = await depositWC.calculateWitness(input, 0);
-        
+        console.log("Witness calculated:", r);
+
         const commitment = r[1];
+        console.log("Commitment:", commitment);
+
         const nullifierHash = r[2];
+        console.log("NullifierHash:", nullifierHash);
+
 
         const value = ethers.BigNumber.from("100000000000000000").toHexString();
 
@@ -87,6 +97,8 @@ const Interface = () => {
             value: value,
             data: tornadoInterface.encodeFunctionData("deposit", [commitment])
         };
+        console.log("Transaction prepared:", tx);
+
 
         try{
             const txHash = await window.ethereum.request({ method: "eth_sendTransaction", params: [tx] });
@@ -115,22 +127,32 @@ const Interface = () => {
         }  
     };
     const withdraw = async () => {
+        console.log("Starting withdrawal process");
         updateWithdrawButtonState(ButtonState.Disabled);
-
-        if(!textArea || !textArea.value){ alert("Please input the proof of deposit string."); }
-
-        try{
+    
+        if (!textArea || !textArea.value) {
+            alert("Please input the proof of deposit string.");
+            return; // Exit if no input
+        }
+    
+        try {
+            console.log("Retrieving proof string from text area");
             const proofString = textArea.value;
+            console.log("Decoding proof string");
             const proofElements = JSON.parse(atob(proofString));
-
+    
+            console.log("Requesting transaction receipt for txHash:", proofElements.txHash);
             receipt = await window.ethereum.request({ method: "eth_getTransactionReceipt", params: [proofElements.txHash] });
-            if(!receipt){ throw "empty-receipt"; }
-
+    
+            if (!receipt) {
+                throw "empty-receipt";
+            }
+    
+            console.log("Receipt obtained:", receipt);
             const log = receipt.logs[0];
             const decodedData = tornadoInterface.decodeEventLog("Deposit", log.data, log.topics);
-
-            const SnarkJS = window['snarkjs'];
-
+            console.log("Decoded log data:", decodedData);
+    
             const proofInput = {
                 "root": $u.BNToDecimal(decodedData.root),
                 "nullifierHash": proofElements.nullifierHash,
@@ -140,38 +162,51 @@ const Interface = () => {
                 "hashPairings": decodedData.hashPairings.map((n) => ($u.BNToDecimal(n))),
                 "hashDirections": decodedData.pairDirection
             };
-
-            const { proof, publicSignals } = await SnarkJS.groth16.fullProve(proofInput, "/withdraw.wasm", "/setup_final.zkey");
-
+            console.log("Proof input prepared:", proofInput);
+    
+            console.log("Generating zk-SNARK proof using groth16");
+            const { proof, publicSignals } = await window.snarkjs.groth16.fullProve(proofInput, "/withdraw.wasm", "/setup_final.zkey");
+            console.log("Proof generated:", proof);
+    
             const callInputs = [
                 proof.pi_a.slice(0, 2).map($u.BN256ToHex),
                 proof.pi_b.slice(0, 2).map((row) => ($u.reverseCoordinate(row.map($u.BN256ToHex)))),
                 proof.pi_c.slice(0, 2).map($u.BN256ToHex),
                 publicSignals.slice(0, 2).map($u.BN256ToHex)
             ];
-
+            console.log("Formatted call inputs for smart contract:", callInputs);
+    
             const callData = tornadoInterface.encodeFunctionData("withdraw", callInputs);
             const tx = {
                 to: tornadoAddress,
                 from: account.address,
                 data: callData
             };
+            console.log("Prepared transaction:", tx);
+    
+            console.log("Sending transaction");
             const txHash = await window.ethereum.request({ method: "eth_sendTransaction", params: [tx] });
-
+            console.log("Transaction sent, txHash:", txHash);
+    
             var receipt;
-            while(!receipt){
+            console.log("Waiting for transaction receipt");
+            while (!receipt) {
                 receipt = await window.ethereum.request({ method: "eth_getTransactionReceipt", params: [txHash] });
-                await new Promise((resolve, reject) => { setTimeout(resolve, 1000); });
+                await new Promise((resolve) => { setTimeout(resolve, 1000); });
             }
-
-            if(!!receipt){ updateWithdrawalSuccessful(true); }
-        }catch(e){
-            console.log(e);
+    
+            console.log("Transaction receipt received:", receipt);
+            if (!!receipt) {
+                updateWithdrawalSuccessful(true);
+            }
+        } catch (e) {
+            console.log("Error during withdrawal process:", e);
         }
-
+    
         updateWithdrawButtonState(ButtonState.Normal);
+        console.log("Withdrawal process completed");
     };
-
+    
     const flashCopiedMessage = async () => {
         updateDisplayCopiedMessage(true);
         setTimeout(() => {
