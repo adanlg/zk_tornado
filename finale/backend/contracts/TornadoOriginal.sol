@@ -5,15 +5,15 @@ import "./MiMCSponge.sol";
 import "./ReentrancyGuard.sol";
 
 interface IVerifier {
-    function verifyProof(uint[2] memory a, uint[2][2] memory b, uint[2] memory c, uint[3] memory input) external view returns (bool);
+    function verifyProof(uint[2] memory a, uint[2][2] memory b, uint[2] memory c, uint[3] memory input) external;
 }
 
 contract Tornado is ReentrancyGuard {
-    IVerifier public verifier;
+    address verifier;
     Hasher hasher;
-    address public owner;
 
     uint8 public treeLevel = 10;
+    uint256 public denomination = 0.1 ether;
 
     uint256 public nextLeafIdx = 0;
     mapping(uint256 => bool) public roots;
@@ -39,15 +39,14 @@ contract Tornado is ReentrancyGuard {
 
     constructor(
         address _hasher,
-        address _verifier,
-        address _owner
+        address _verifier
     ){
         hasher = Hasher(_hasher);
-        owner = _owner;
-        verifier = IVerifier(_verifier); // Cast the address to IVerifier
+        verifier = _verifier;
     }
 
-    function deposit(uint256 _commitment) external nonReentrant {
+    function deposit(uint256 _commitment) external payable nonReentrant {
+        require(msg.value == denomination, "incorrect-amount");
         require(!commitments[_commitment], "existing-commitment");
         require(nextLeafIdx < 2 ** treeLevel, "tree-full");
 
@@ -94,24 +93,32 @@ contract Tornado is ReentrancyGuard {
         emit Deposit(newRoot, hashPairings, hashDirections);
     }
 
-    function canWithdraw(
+    function withdraw(
         uint[2] memory a,
         uint[2][2] memory b,
         uint[2] memory c,
         uint[2] memory input
-    ) public view returns (bool) {
+    ) external payable nonReentrant {
         uint256 _root = input[0];
         uint256 _nullifierHash = input[1];
-        uint256 _addr = uint256(uint160(owner));
 
-        // Check if root is valid
-        if(!roots[_root]) {
-            return false; // Not a valid root
-        }
+        require(!nullifierHashes[_nullifierHash], "already-spent");
+        require(roots[_root], "not-root");
 
-        // Previously included address removed from the call
-        bool verifyOK = verifier.verifyProof(a, b, c, [_root, _nullifierHash, _addr]);
+        uint256 _addr = uint256(uint160(msg.sender));
 
-        return verifyOK; // Return true if proof is valid, false otherwise
+        (bool verifyOK, ) = verifier.call(abi.encodeCall(IVerifier.verifyProof, (a, b, c, [_root, _nullifierHash, _addr])));
+
+        require(verifyOK, "invalid-proof");
+
+        nullifierHashes[_nullifierHash] = true;
+        address payable target = payable(msg.sender);
+
+        (bool ok, ) = target.call{ value: denomination }("");
+
+        require(ok, "payment-failed");
+
+        emit Withdrawal(msg.sender, _nullifierHash);
     }
+                
 }
