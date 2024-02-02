@@ -1,12 +1,13 @@
-import { useState } from "react";
 import $u from '../utils/$u.js';
 import { ethers } from "ethers";
+import React, { useState, useRef } from 'react';
+
 
 
 const wc = require("../circuit/witness_calculator.js");
 
 // const tornadoAddress = "0x06DB9c2856Eab779B2794E98c769a2e6aDA4D4b6";
-const tornadoAddress = "0x43ca3D2C94be00692D207C6A1e60D8B325c6f12f"
+const tornadoAddress = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
 
 const tornadoJSON = require("../json/Tornado.json");
 const tornadoABI = tornadoJSON.abi;
@@ -15,10 +16,13 @@ const tornadoInterface = new ethers.utils.Interface(tornadoABI);
 const ButtonState = { Normal: 0, Loading: 1, Disabled: 2 };
 
 const Interface = () => {
+    const [txHash, setTxHash] = useState(null);
     const [account, updateAccount] = useState(null);
     const [proofElements, updateProofElements] = useState(null);
     const [proofStringEl, updateProofStringEl] = useState(null);
     const [textArea, updateTextArea] = useState(null);
+    const textAreaRef = useRef(null); // This is how you correctly initialize a ref
+
 
     // interface states
     const [section, updateSection] = useState("Deposit");
@@ -40,10 +44,10 @@ const Interface = () => {
             var accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
             var chainId = window.ethereum.networkVersion;
 
-            if(chainId != "31337"){
-                alert("Please switch to Goerli Testnet");
-                throw "wrong-chain";
-            }
+            // if(chainId != "31337"){
+            //     alert("Please switch to Goerli Testnet");
+            //     throw "wrong-chain";
+            // }
 
             var activeAccount = accounts[0];
             var balance = await window.ethereum.request({ method: "eth_getBalance", params: [activeAccount, "latest"] });
@@ -62,8 +66,9 @@ const Interface = () => {
         updateMetamaskButtonState(ButtonState.Normal);
     };
     const depositEther = async () => {
+        let proofString;
         updateDepositButtonState(ButtonState.Disabled);
-
+// ------------------------PASO 1 - GENERAR SECRET Y NULLIFIER------------------------------------------------------------
         const secret = ethers.BigNumber.from(ethers.utils.randomBytes(32)).toString();
         const nullifier = ethers.BigNumber.from(ethers.utils.randomBytes(32)).toString();
         console.log("Secret generated:", secret);
@@ -90,7 +95,7 @@ const Interface = () => {
 
 
         const value = ethers.BigNumber.from("100000000000000000").toHexString();
-
+//----------------------------------------------------------------------------------
         const tx = {
             to: tornadoAddress,
             from: account.address,
@@ -113,34 +118,39 @@ const Interface = () => {
 
             console.log(proofElements);
 
-            updateProofElements(btoa(JSON.stringify(proofElements)));
+            // proofString = updateProofElements(btoa(JSON.stringify(proofElements)));
+            proofString = btoa(JSON.stringify({
+                nullifierHash: `${nullifierHash}`,
+                secret: secret,
+                nullifier: nullifier,
+                commitment: `${commitment}`,
+                txHash: txHash
+            }));
         }catch(e){
             console.log(e);
         }
 
         updateDepositButtonState(ButtonState.Normal);
-    };
-    const copyProof = () => {
-        if(!!proofStringEl){
-            flashCopiedMessage();
-            navigator.clipboard.writeText(proofStringEl.innerHTML);
-        }  
-    };
-    const withdraw = async () => {
+    // };
+    // const copyProof = () => {
+    //     if(!!proofStringEl){
+    //         flashCopiedMessage();
+    //         navigator.clipboard.writeText(proofStringEl.innerHTML);
+    //     }  
+    // };
+    // const withdraw = async () => {
         console.log("Starting withdrawal process");
+        console.log(tornadoAddress)
         updateWithdrawButtonState(ButtonState.Disabled);
     
-        if (!textArea || !textArea.value) {
-            alert("Please input the proof of deposit string.");
-            return; // Exit if no input
-        }
     
         try {
-            console.log("Retrieving proof string from text area");
-            const proofString = textArea.value;
-            console.log("Decoding proof string");
+            // console.log("Retrieving proof string from text area");
+            // const proofString = textArea.value;
+            // console.log("Decoding proof string");
             const proofElements = JSON.parse(atob(proofString));
-    
+            console.log("proofelements:", proofElements);
+
             console.log("Requesting transaction receipt for txHash:", proofElements.txHash);
             receipt = await window.ethereum.request({ method: "eth_getTransactionReceipt", params: [proofElements.txHash] });
     
@@ -150,6 +160,7 @@ const Interface = () => {
     
             console.log("Receipt obtained:", receipt);
             const log = receipt.logs[0];
+            console.log(log)
             const decodedData = tornadoInterface.decodeEventLog("Deposit", log.data, log.topics);
             console.log("Decoded log data:", decodedData);
     
@@ -174,6 +185,7 @@ const Interface = () => {
                 proof.pi_c.slice(0, 2).map($u.BN256ToHex),
                 publicSignals.slice(0, 2).map($u.BN256ToHex)
             ];
+            console.log("aqui ya puede terminaaaaaar")
             console.log("Formatted call inputs for smart contract:", callInputs);
     
             const callData = tornadoInterface.encodeFunctionData("withdraw", callInputs);
@@ -206,7 +218,32 @@ const Interface = () => {
         updateWithdrawButtonState(ButtonState.Normal);
         console.log("Withdrawal process completed");
     };
+
+    const withdraw = async () => {
+        const userInput = textAreaRef.current ? textAreaRef.current.value : '';
     
+        try {
+            const response = await fetch('http://localhost:3001/receive-data', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ param1: userInput })
+            });
+    
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+    
+            const responseData = await response.json();
+            console.log(responseData);
+            setTxHash(responseData.txHash); // Assuming responseData.txHash contains the transaction hash
+        } catch (error) {
+            console.error('There was a problem with the fetch operation:', error);
+        }
+    };
+    
+
     const flashCopiedMessage = async () => {
         updateDisplayCopiedMessage(true);
         setTimeout(() => {
@@ -255,9 +292,9 @@ const Interface = () => {
                 <div className="card mx-auto" style={{ maxWidth: 450 }}>
                     {
                         (section == "Deposit") ? (
-                            <img className="card-img-top" src="/img/deposit.png" />
+                            <img className="card-img-top" src="/img/+18.png" />
                         ) : (
-                            <img className="card-img-top" src="/img/withdraw.png" />
+                            <img className="card-img-top" src="/img/+18.png" />
                         )
                     }
                     <div className="card-body">
@@ -265,16 +302,16 @@ const Interface = () => {
                         <div className="btn-group" style={{ marginBottom: 20 }}>
                             {
                                 (section == "Deposit") ? (
-                                    <button className="btn btn-primary">Deposit</button>
+                                    <button className="btn btn-primary">Obtén tu clave +18</button>
                                 ) : (
-                                    <button onClick={() => { updateSection("Deposit"); }} className="btn btn-outline-primary">Deposit</button>   
+                                    <button onClick={() => { updateSection("Deposit"); }} className="btn btn-outline-primary">Obtén tu clave +18</button>   
                                 )
                             }
                             {
                                 (section == "Deposit") ? (
-                                    <button onClick={() => { updateSection("Withdraw"); }} className="btn btn-outline-primary">Withdraw</button> 
+                                    <button onClick={() => { updateSection("Withdraw"); }} className="btn btn-outline-primary">Obtenerla de forma manual</button> 
                                 ) : (
-                                    <button className="btn btn-primary">Withdraw</button>
+                                    <button className="btn btn-primary">Obtenerla de forma manual</button>
                                 )
                             }
                         </div>
@@ -288,7 +325,7 @@ const Interface = () => {
                                                 <div className="alert alert-success">
                                                     <span><strong>Proof of Deposit:</strong></span>
                                                     <div className="p-1" style={{ lineHeight: "12px" }}>
-                                                        <span style={{ fontSize: 10 }} ref={(proofStringEl) => { updateProofStringEl(proofStringEl); }}>{proofElements}</span>
+                                                        <span style={{ fontSize: 10 }} ref={(callInputs) => { updateProofStringEl(callInputs); }}>{callInputs}</span>
                                                     </div>
 
                                                 </div>
@@ -305,12 +342,12 @@ const Interface = () => {
                                             </div>
                                         ) : (
                                             <div>
-                                                <p className="text-secondary">Note: All deposits and withdrawals are of the same denomination of 0.1 ETH.</p>
+                                                <p className="text-secondary">Nota: Las claves son totalmente anónimas por lo que nadie podrá identificarte.</p>
                                                 <button 
                                                     className="btn btn-success" 
                                                     onClick={depositEther}
                                                     disabled={depositButtonState == ButtonState.Disabled}
-                                                ><span className="small">Deposit 0.1 ETH</span></button>
+                                                ><span className="small">Reclamar clave</span></button>
                                             </div>
                                             
                                         )
@@ -335,15 +372,23 @@ const Interface = () => {
                                             </div>
                                         ) : (
                                             <div>
-                                                <p className="text-secondary">Note: All deposits and withdrawals are of the same denomination of 0.1 ETH.</p>
+                                                <p className="text-secondary">Nota: Para realizar esta prueba necesitas conocimiento técnico y se recomienda seguir x tutorial.</p>
                                                 <div className="form-group">
-                                                    <textarea className="form-control" style={{ resize: "none" }} ref={(ta) => { updateTextArea(ta); }}></textarea>
+                                                    <textarea className="form-control" style={{ resize: "none" }} ref={textAreaRef}></textarea>
                                                 </div>
+                                                {
+                                                txHash ? (
+                                                    <div>
+                                                        <span>Your transaction hash is: {txHash}</span>
+                                                    </div>
+                                                ) : (
                                                 <button 
                                                     className="btn btn-primary" 
                                                     onClick={withdraw}
                                                     disabled={withdrawButtonState == ButtonState.Disabled}
-                                                ><span className="small">Withdraw 0.1 ETH</span></button>
+                                                ><span className="small">Incluir commitment</span></button>
+                                                )
+                                                } 
                                             </div>                  
                                         )
                                     }
@@ -362,11 +407,7 @@ const Interface = () => {
 
                     </div>
 
-                    <div className="card-footer p-4" style={{ lineHeight: "15px" }}>
-                        <span className="small text-secondary" style={{ fontSize: "12px" }}>
-                            <strong>Disclaimer:</strong> Products intended for educational purposes are <i>not</i> to be used with commercial intent. NFTA, the organization who sponsored the development of this project, explicitly prohibits and assumes no responsibilities for losses due to such use.
-                        </span>
-                    </div>
+
                 </div>
             </div>
         </div>

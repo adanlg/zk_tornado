@@ -44,4 +44,5 @@ const utils = {
     }
 };
 
-export default utils;
+//export default utils;
+module.exports = utils;

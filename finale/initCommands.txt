@@ -1,0 +1,15 @@
+cd frontend
+npm run dev
+cd backend
+npx hardhat node
+cd backend 
+npx hardhat compile 
+npx hardhat run scripts/deploy.js --network localhost
+
+(solo hacen falta estas tres terminales)
+-para crear commitment- en root 
+node frontend/components/createCommitment.js
+
+
+-para deployerBackend:
+node index.js
