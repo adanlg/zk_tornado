@@ -28,45 +28,12 @@ const Interface = () => {
     const [section, updateSection] = useState("Deposit");
     const [displayCopiedMessage, updateDisplayCopiedMessage] = useState(false);
     const [withdrawalSuccessful, updateWithdrawalSuccessful] = useState(false);
-    const [metamaskButtonState, updateMetamaskButtonState] = useState(ButtonState.Normal);
     const [depositButtonState, updateDepositButtonState] = useState(ButtonState.Normal);
     const [withdrawButtonState, updateWithdrawButtonState] = useState(ButtonState.Normal);
     const [zkProof, setZkProof] = useState(null);
     const [copySuccess, setCopySuccess] = useState('');
 
 
-    const connectMetamask = async () => {
-        try{
-            updateMetamaskButtonState(ButtonState.Disabled);
-            if(!window.ethereum){
-                alert("Please install Metamask to use this app.");
-                throw "no-metamask";
-            }
-
-            var accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-            var chainId = window.ethereum.networkVersion;
-
-            // if(chainId != "31337"){
-            //     alert("Please switch to Goerli Testnet");
-            //     throw "wrong-chain";
-            // }
-
-            var activeAccount = accounts[0];
-            var balance = await window.ethereum.request({ method: "eth_getBalance", params: [activeAccount, "latest"] });
-            balance = $u.moveDecimalLeft(ethers.BigNumber.from(balance).toString(), 18);
-
-            var newAccountState = {
-                chainId: chainId,
-                address: activeAccount,
-                balance: balance
-            };
-            updateAccount(newAccountState);
-        }catch(e){
-            console.log(e);
-        }
-
-        updateMetamaskButtonState(ButtonState.Normal);
-    };
     const depositEther = async () => {
         updateDepositButtonState(ButtonState.Loading);
     
@@ -130,36 +97,10 @@ const Interface = () => {
     };
     
 
-    const flashCopiedMessage = async () => {
-        updateDisplayCopiedMessage(true);
-        setTimeout(() => {
-            updateDisplayCopiedMessage(false);
-        }, 1000);
-    }
     return (
         <div>
             {/* Navigation Bar */}
-            <nav className="navbar navbar-nav fixed-top bg-dark text-light">
-                {account ? (
-                    <div className="container">
-                        <div className="navbar-left">
-                            <span><strong>ChainId:</strong> {account.chainId}</span>
-                        </div>
-                        <div className="navbar-right">
-                            <span><strong>{account.address.slice(0, 12) + "..."}</strong></span><br/>
-                            <span className="small">{account.balance} ETH</span>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="container">
-                        <div className="navbar-left"><h5>NFTA-Tornado</h5></div>
-                        <div className="navbar-right">
-                            <button className="btn btn-primary" onClick={connectMetamask} disabled={metamaskButtonState === ButtonState.Disabled}>Connect Metamask</button>
-                        </div>
-                    </div>
-                )}
-            </nav>
-    
+            
             <div style={{ height: "60px" }}></div>
     
             {/* Main Content */}
@@ -177,7 +118,7 @@ const Interface = () => {
                         </div>
     
                         {/* Deposit Section */}
-                        {section === "Deposit" && !!account && (
+                        {section === "Deposit" && (
                             <div>
                                 {!zkProof ? (
                                     <div>
@@ -198,7 +139,7 @@ const Interface = () => {
                         )}
     
                         {/* Withdraw Section */}
-                        {section !== "Deposit" && !!account && (
+                        {section !== "Deposit" && (
                             <div>
                                 {withdrawalSuccessful ? (
                                     <div className="alert alert-success p-3">
@@ -215,14 +156,12 @@ const Interface = () => {
                         )}
     
                         {/* Fallback Message */}
-                        {!account && (
-                            <p>Please connect your wallet to use the sections.</p>
-                        )}
+
                     </div>
                 </div>
             </div>
         </div>
     );}
     
-
+//
 export default Interface;
